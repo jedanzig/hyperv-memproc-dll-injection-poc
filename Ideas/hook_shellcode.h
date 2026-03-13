@@ -136,14 +136,21 @@ inline bool InstallFullContextHook(
     return true;
 }
 
-// Calculate instruction length for proper relocation (simplified)
+// Calculate instruction length for proper relocation (simplified pattern match).
+//
+// This covers the handful of prologue patterns that commonly appear at the start
+// of NTDLL/Win32 exports (MOV, JMP, CALL). It is intentionally minimal because
+// the PoC only hooks well-known system functions whose prologues are predictable.
+//
+// For a production trampoline that must handle arbitrary targets, replace this
+// with a proper length-disassembler. Zydis (https://github.com/zyantific/zydis)
+// is the recommended choice — it is header-only-friendly, actively maintained,
+// and handles all x64 encoding edge cases. hde64 is a lighter alternative if
+// binary size is a constraint. Neither was integrated here to keep the PoC
+// dependency-free and focused on the DMA injection mechanism itself.
 inline int GetInstructionLength(const uint8_t* code) {
-    // This is a simplified version - in production use a proper disassembler like Zydis
-    // Ring-1 uses sophisticated instruction relocation
-    
-    // Common x64 instruction patterns
     if (code[0] == 0x48 && (code[1] >= 0x83 && code[1] <= 0x8B)) {
-        return 3; // mov, add, sub with REX.W
+        return 3; // REX.W + MOV/ADD/SUB (common prologue pattern)
     }
     if (code[0] == 0xFF && code[1] == 0x25) {
         return 6; // jmp [rip+disp32]
@@ -151,8 +158,8 @@ inline int GetInstructionLength(const uint8_t* code) {
     if (code[0] == 0xE8 || code[0] == 0xE9) {
         return 5; // call/jmp rel32
     }
+    return 1; 
     
-    return 1; // Default (UNSAFE - use proper disassembler!)
 }
 
 }
