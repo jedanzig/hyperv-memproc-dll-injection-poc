@@ -22,6 +22,12 @@ add_executable(injector_bridge
     main/bridge.cpp
 )
 
+# Test payload DLL — built separately and passed to injector_bridge at runtime
+add_library(test_payload SHARED
+    main/test_dll.cpp
+)
+target_compile_features(test_payload PRIVATE cxx_std_17)
+
 target_compile_features(injector_bridge PRIVATE cxx_std_17)
 
 target_include_directories(injector_bridge PRIVATE
