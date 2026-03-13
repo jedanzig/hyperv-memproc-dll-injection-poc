@@ -101,6 +101,31 @@ injector_bridge.exe notepad.exe test_payload.dll
 
 The injector will wait up to 120 seconds for the target process to appear in the guest VM. Once found, it maps and executes the payload. The test DLL writes `C:\injected_test.txt` inside the guest as proof of execution.
 
+## Detection Surface
+
+Understanding *why* this technique is stealthy — and where it isn't — is as important as the implementation itself.
+
+### What guest-side tooling does NOT see
+
+| Vector | Why it's blind |
+|--------|---------------|
+| Guest kernel (SSDT hooks, PatchGuard) | The injector runs entirely on the **host**. No syscalls are made from within the guest. |
+| Guest ETW / kernel callbacks | `PsSetCreateThreadNotifyRoutine`, `PsSetLoadImageNotifyRoutine` — none are triggered because no new thread is created and the DLL is never loaded through the Windows loader. |
+| Guest AV / EDR user-mode hooks | NTDLL is not used for the allocation or mapping. `VirtualAlloc` is called via inline hook shellcode executing in the context of an existing thread — the EDR's IAT/inline hooks on `NtAllocateVirtualMemory` are bypassed because the call originates from shellcode in a code cave, not from a monitored call stack. |
+| PE loader telemetry | The DLL is mapped manually. It never appears in `InMemoryOrderModuleList` (PEB module list) or triggers `LdrLoadDll` notifications. |
+| Standard memory scanners (scanning for MZ headers) | Headers can be zeroed post-mapping trivially. |
+
+### What can still detect this
+
+| Vector | Notes |
+|--------|-------|
+| Host-side hypervisor introspection | A VMI (Virtual Machine Introspection) solution running at the hypervisor level would see the DMA writes. This is the same layer this tool operates on. |
+| Anomalous `PeekMessageW` return values | The hook causes `PeekMessageW` to return 0 for 1–2 calls during shellcode execution. A behaviour-based rule watching for unexpected message pump failures could flag this. |
+| Executable memory not backed by a file | The allocated region is `PAGE_EXECUTE_READWRITE` with no mapped file backing. Tools like PE-sieve or Moneta that scan for unbacked executable memory regions will find it. |
+| Physical memory forensics | The DLL image exists in guest physical memory and is visible to any tool that can read raw RAM (including MemProcFS itself). |
+
+The core stealth property is the **trust boundary**: all writes originate from the host, so any detection mechanism that relies solely on guest OS visibility is structurally blind to this class of attack.
+
 ## License
 
 This project is licensed under the [MIT License](LICENSE).
